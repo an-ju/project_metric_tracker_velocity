@@ -36,7 +36,7 @@ class ProjectMetricTrackerVelocity
     synthesize
     @image ||= { chartType: 'tracker_velocity',
                  textTitle: 'Tracker Velocity',
-                 data: @status.update(total: @sum_points) }
+                 data: process_hash }
   end
 
   def self.credentials
@@ -58,5 +58,15 @@ class ProjectMetricTrackerVelocity
     states.each_pair do |key, val|
       @status[key] = val.inject { |sum, elem| sum + (elem['estimate'] ? elem['estimate'] : 0) }
     end
+  end
+
+  def process_hash
+    { unscheduled: 0.0,
+      unstarted: 0.0,
+      started: 0.0,
+      finished: 0.0,
+      delivered: 0.0,
+      accepted: 0.0,
+      rejected: 0.0 }.update(@status)
   end
 end
