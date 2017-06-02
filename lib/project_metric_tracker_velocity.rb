@@ -15,8 +15,8 @@ class ProjectMetricTrackerVelocity
   end
 
   def refresh
-    @raw_data ||= iterations
     @image = @score = nil
+    @raw_data ||= iterations
   end
 
   def raw_data=(new)
@@ -36,7 +36,7 @@ class ProjectMetricTrackerVelocity
     synthesize
     @image ||= { chartType: 'tracker_velocity',
                  textTitle: 'Tracker Velocity',
-                 data: process_hash }
+                 data: process_hash }.to_json
   end
 
   def self.credentials
