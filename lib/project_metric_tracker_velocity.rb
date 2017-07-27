@@ -4,7 +4,6 @@ require 'json'
 
 class ProjectMetricTrackerVelocity
   attr_reader :raw_data
-  attr_reader :latest_iteration, :status
 
   def initialize(credentials, raw_data = nil)
     @project = credentials[:tracker_project]
@@ -12,11 +11,13 @@ class ProjectMetricTrackerVelocity
     @conn.headers['Content-Type'] = 'application/json'
     @conn.headers['X-TrackerToken'] = credentials[:tracker_token]
     @raw_data = raw_data
+
+    @max_iter = 0
   end
 
   def refresh
     @image = @score = nil
-    @raw_data ||= iterations
+    @raw_data ||= stories
   end
 
   def raw_data=(new)
@@ -26,17 +27,17 @@ class ProjectMetricTrackerVelocity
   end
 
   def score
-    @raw_data ||= iterations
+    @raw_data ||= stories
     synthesize
-    @score ||= @status.has_key?(:accepted) ? (@status[:accepted].to_f / @sum_points) : 0.0
+    @score ||= @velocity[@max_iter]
   end
 
   def image
-    @raw_data ||= iterations
+    @raw_data ||= stories
     synthesize
-    @image ||= { chartType: 'tracker_velocity',
+    @image ||= { chartType: 'tracker_velocity_v2',
                  textTitle: 'Tracker Velocity',
-                 data: process_hash }.to_json
+                 data: @velocity }.to_json
   end
 
   def self.credentials
@@ -45,28 +46,31 @@ class ProjectMetricTrackerVelocity
 
   private
 
-  def iterations
-    JSON.parse(@conn.get("projects/#{@project}/iterations").body)
+  def stories
+    JSON.parse(@conn.get("projects/#{@project}/stories").body)
   end
 
   def synthesize
-    @raw_data ||= iterations
-    @latest_iteration = @raw_data.empty? ? { stories: [] } : @raw_data[-1]
-    @sum_points = @latest_iteration['stories'].inject { |sum, elem| sum + (elem['estimate'] ? elem['estimate'] : 0) }
-    states = @latest_iteration['stories'].group_by { |story| story['current_state'].to_sym }
-    @status = {}
-    states.each_pair do |key, val|
-      @status[key] = val.inject { |sum, elem| sum + (elem['estimate'] ? elem['estimate'] : 0) }
+    @raw_data ||= stories
+    iteration_data = @raw_data.map do |story|
+      iter = get_iterations(story)
+      story.update iteration: iter.nil? ? -1 : iter
+    end
+
+    @velocity = iteration_data.inject(Hash.new(0)) do |sum, story|
+      if story['current_state'].eql? 'accepted'
+        @max_iter = story[:iteration] if story[:iteration] > @max_iter
+        sum[story[:iteration]] += story['estimate'].nil? ? 1 : story['estimate']
+      end
+      sum
     end
   end
 
-  def process_hash
-    { unscheduled: 0.0,
-      unstarted: 0.0,
-      started: 0.0,
-      finished: 0.0,
-      delivered: 0.0,
-      accepted: 0.0,
-      rejected: 0.0 }.update(@status)
+  def get_iterations(story)
+    iterations = story['labels'].map do |label|
+      /^[i|I]ter[^0-9]*([0-9]).*$/ =~ label['name']
+      $1.nil? ? nil : $1.to_i
+    end
+    iterations.reject(&:nil?).sort.last
   end
 end
